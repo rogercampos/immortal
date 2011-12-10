@@ -1,8 +1,52 @@
+class SQliteAdapter
+  def load
+    require 'sqlite3'
+  end
+
+  def setup
+    ActiveRecord::Base.establish_connection(:adapter => "sqlite3", :database => ":memory:")
+  end
+end
+
+class PGAdapter
+  def load
+    require 'pg'
+  end
+
+  def setup
+    if ENV['immortal_pg_username'].nil? ||
+       ENV['immortal_pg_password'].nil? ||
+       ENV['immortal_pg_database'].nil?
+
+      raise RuntimeError, "Please provide a valid PostgreSQL credentials"
+    end
+
+    ActiveRecord::Base.establish_connection(:adapter => "postgresql",
+                                            :database => ENV["immortal_pg_database"],
+                                            :hostname => ENV["immortal_pg_host"].presence || "localhost",
+                                            :port => ENV['immortal_pg_port'].presence || 5432,
+                                            :username => ENV["immortal_pg_username"],
+                                            :password => ENV["immortal_pg_password"])
+
+    begin
+      tables = [:immortal_models,
+        :immortal_joins,
+        :immortal_nodes,
+        :immortal_some_targets,
+        :immortal_some_other_targets]
+      ActiveRecord::Base.connection.execute(tables.map{|x| "drop table #{x}"}.join("; "))
+    rescue ActiveRecord::StatementInvalid
+    end
+  end
+end
+
+adapter = ENV['immortal_pg_username'].nil? ? SQliteAdapter.new : PGAdapter.new
+
 Bundler.require(:default, :development)
 require 'rspec'
 require File.expand_path("../../lib/immortal", __FILE__)
 require 'active_record'
-require 'sqlite3'
+adapter.load
 require 'logger'
 
 RSpec.configure do |config|
@@ -14,8 +58,7 @@ RSpec.configure do |config|
   end
 end
 
-
-ActiveRecord::Base.establish_connection(:adapter => "sqlite3", :database => ":memory:")
+adapter.setup
 ActiveRecord::Base.logger = Logger.new(STDOUT) if ENV['DEBUG']
 
 old_stdout = $stdout
@@ -72,7 +115,7 @@ class ImmortalNode < ActiveRecord::Base
 
   has_many :immortal_joins
   has_many :immortal_models, :through => :immortal_joins
-  
+
   has_many :joins, :class_name => 'ImmortalJoin'
   has_many :models, :through => :joins, :source => :immortal_model
 
